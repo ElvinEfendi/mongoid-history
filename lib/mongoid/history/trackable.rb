@@ -76,6 +76,32 @@ module Mongoid::History
         @history_tracks ||= Mongoid::History.tracker_class.where(:scope => history_trackable_options[:scope], :association_chain => association_hash)
       end
 
+
+      # return history tracks tracked under given wrapper
+      # example: 
+      #   suppose under /buildings/:building_id/spaces/:id/ route some actions happened
+      #   then tracks according to this actions can be fetched with wrapper = {class_name: 'Space', id: ':id'}
+      def history_tracks_by_wrapper(wrapper=nil, order_options={created_at: 'DESC'})
+        wrapper ||= {class_name: self.class.name, id: self.id.to_s}
+        @history_tracks_by_wrapper ||=
+          Mongoid::History.tracker_class.where(wrapper_object: wrapper).order(order_options)
+      end
+
+      # fetch all history tracks as history_tracks_by_wrapper does
+      # however this method also group fetched data by given field
+      def groupped_history_tracks(wrapper=nil, group_by_key='history_group_id')
+        wrapper ||= {class_name: self.class.name, id: self.id.to_s}
+
+        hash = { 
+          key: group_by_key,
+          cond: {wrapper_object: wrapper},
+          initial: {group: []}, 
+          reduce: 'function(obj,prev) {prev.group.push(obj);}' 
+        }
+
+        @groupped_history_tracks ||= Mongoid::History.tracker_class.collection.group(hash)
+      end
+
       #  undo :from => 1, :to => 5
       #  undo 4
       #  undo :last => 10

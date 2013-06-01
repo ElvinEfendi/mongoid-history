@@ -15,6 +15,13 @@ module Mongoid::History
       field       :scope,                   :type => String
       belongs_to  :modifier,                :class_name => Mongoid::History.modifier_class_name
 
+      # to fetch history tracks by wrapper object
+      field       :wrapper_object,          :type => Hash # format: {class_name: '', id: BSON::ObjectId('')}
+
+      # this variable will be set inside model by user
+      # its default value is Time.now.utc
+      field       :history_group_id,        :type => String
+
       index(:scope => 1)
       index(:association_chain => 1)
 
@@ -65,6 +72,7 @@ module Mongoid::History
       redo_hash[modifier_field] = modifier
       localize_keys(redo_hash)
     end
+
 
     def trackable_root
       @trackable_root ||= trackable_parents_and_trackable.first
@@ -156,6 +164,7 @@ module Mongoid::History
 
     def create_on_parent
       name = association_chain.last["name"]
+
       if trackable_parent.class.embeds_one?(name)
         trackable_parent.create_embedded(name, localize_keys(modified))
       elsif trackable_parent.class.embeds_many?(name)

@@ -18,6 +18,12 @@ module Mongoid::History
     # can continue.
     def before(controller)
       self.controller = controller
+
+      # set history_group_id to group history tracks if given otherwise set to current time with minutes precision
+      # user can customize history group identifier by added history_group_id method to the controller
+      @history_group_id =     
+        controller.methods.include?(:history_group_id) ? controller.history_group_id : Time.now.utc.strftime('%Y%m%d%H%M')
+      
       true
     end
 
@@ -33,6 +39,15 @@ module Mongoid::History
       modifier_field = track.trackable.history_trackable_options[:modifier_field]
       modifier = track.trackable.send modifier_field
       track.modifier = current_user unless modifier
+
+      # set wrapper object to fetch history tracks by wrapper object
+      if controller.respond_to?(:controller_name)
+        id = controller.instance_variable_get("@#{controller.controller_name.classify.downcase}").try(:id).try(:to_s)
+        track.wrapper_object = {class_name: controller.try(:controller_name).try(:classify), id: id}
+      end
+
+      # set history_group_id
+      track.history_group_id = @history_group_id
     end
 
     def current_user
