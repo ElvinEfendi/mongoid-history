@@ -37,14 +37,15 @@ module Mongoid::History
 
     def before_create(track)
       modifier_field = track.trackable.history_trackable_options[:modifier_field]
-      modifier = track.send modifier_field
-      track.send "#{modifier_field}=", current_user unless modifier
+      modifier = track.trackable.send modifier_field
+      track.modifier = current_user unless modifier
 
       # set wrapper object to fetch history tracks by wrapper object
-      id = controller.instance_variable_get("@#{controller.controller_name.classify.downcase}").try(:id).try(:to_s)
-      track.wrapper_object = {class_name: controller.try(:controller_name).try(:classify), id: id}
-      #track.wrapper_object = {class_name: controller.try(:controller_name).try(:classify), id: controller.try(:params).try(:[], :id)}
-      
+      if controller.respond_to?(:controller_name)
+        id = controller.instance_variable_get("@#{controller.controller_name.classify.downcase}").try(:id).try(:to_s)
+        track.wrapper_object = {class_name: controller.try(:controller_name).try(:classify), id: id}
+      end
+
       # set history_group_id
       track.history_group_id = @history_group_id
     end

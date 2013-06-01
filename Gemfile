@@ -1,13 +1,12 @@
 source "http://rubygems.org"
 
 gem "easy_diff"
-gem "mongoid", ">= 2.0.0"
+gem "mongoid", "~> 3.0"
+gem "activesupport"
 
-group :development do
-  gem "bson_ext"
-  gem "rspec"
+group :test do
+  gem "rspec", ">= 2.11.0"
   gem "yard"
   gem "bundler", ">= 1.0.0"
   gem "jeweler"
-  gem "database_cleaner"
 end

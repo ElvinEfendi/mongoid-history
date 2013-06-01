@@ -1,23 +1,11 @@
 $LOAD_PATH.unshift(File.join(File.dirname(__FILE__), '..', 'lib'))
-$LOAD_PATH.unshift(File.dirname(__FILE__))
 
-require 'rspec'
-require 'mongoid'
-require 'mongoid-history'
-require 'database_cleaner'
+require 'rubygems'
+require 'bundler/setup'
+
+Bundler.require :default, :test
 
 Dir["#{File.dirname(__FILE__)}/support/**/*.rb"].each {|f| require f}
 
-RSpec.configure do |config|
-  config.before(:suite) do
-    DatabaseCleaner.strategy = :truncation
-  end
+require 'mongoid-history'
 
-  config.after(:each) do
-    DatabaseCleaner.clean
-  end
-end
-
-Mongoid.configure do |config|
-  config.master = Mongo::Connection.new.db("mongoid-history")
-end

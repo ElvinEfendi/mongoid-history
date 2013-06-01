@@ -4,13 +4,13 @@ module Mongoid::History
 
     module ClassMethods
       def track_history(options={})
-        model_name = self.name.tableize.singularize.to_sym
+        scope_name = self.collection_name.to_s.singularize.to_sym
         default_options = {
           :on             =>  :all,
           :except         =>  [:created_at, :updated_at],
           :modifier_field =>  :modifier,
           :version_field  =>  :version,
-          :scope          =>  model_name,
+          :scope          =>  scope_name,
           :track_create   =>  false,
           :track_update   =>  true,
           :track_destroy  =>  false,
@@ -23,18 +23,20 @@ module Mongoid::History
         options[:except] = [options[:except]] unless options[:except].is_a? Array
         options[:except] << options[:version_field]
         options[:except] << "#{options[:modifier_field]}_id".to_sym
-        options[:except] += [:_id, :id]
-        options[:except] = options[:except].map(&:to_s).flatten.compact.uniq
-        options[:except].map(&:to_s)
+        options[:except] += [:_id]
+        options[:except] = options[:except].map{|field| database_field_name(field)}.compact.uniq
 
         # normalize fields to track to either :all or an array of strings
         if options[:on] != :all
           options[:on] = [options[:on]] unless options[:on].is_a? Array
-          options[:on] = options[:on].map(&:to_s).flatten.uniq
+          options[:on] = options[:on].map{|field| database_field_name(field)}.compact.uniq
         end
 
         field options[:version_field].to_sym, :type => Integer
-        referenced_in options[:modifier_field].to_sym, :class_name => Mongoid::History.modifier_class_name
+
+        belongs_to_modifier_options = { :class_name => Mongoid::History.modifier_class_name }
+        belongs_to_modifier_options[:inverse_of] = options[:modifier_field_inverse_of] if options.has_key?(:modifier_field_inverse_of)
+        belongs_to options[:modifier_field].to_sym, belongs_to_modifier_options
 
         include MyInstanceMethods
         extend SingletonMethods
@@ -47,7 +49,7 @@ module Mongoid::History
         before_destroy :track_destroy if options[:track_destroy]
 
         Mongoid::History.trackable_class_options ||= {}
-        Mongoid::History.trackable_class_options[model_name] = options
+        Mongoid::History.trackable_class_options[scope_name] = options
       end
 
       def track_history?
@@ -87,7 +89,7 @@ module Mongoid::History
 
       # fetch all history tracks as history_tracks_by_wrapper does
       # however this method also group fetched data by given field
-      def groupped_history_tracks(wrapper=nil, group_by_key='history_group_id')
+      def grouped_history_tracks(wrapper=nil, group_by_key='history_group_id')
         wrapper ||= {class_name: self.class.name, id: self.id.to_s}
 
         hash = { 
@@ -97,7 +99,7 @@ module Mongoid::History
           reduce: 'function(obj,prev) {prev.group.push(obj);}' 
         }
 
-        @groupped_history_tracks ||= Mongoid::History.tracker_class.collection.group(hash)
+        @grouped_history_tracks ||= Mongoid::History.tracker_class.collection.group(hash)
       end
 
       #  undo :from => 1, :to => 5
@@ -108,7 +110,6 @@ module Mongoid::History
         versions.sort!{|v1, v2| v2.version <=> v1.version}
 
         versions.each do |v|
-          undo_attr = v.undo_attr(modifier)
           self.attributes = v.undo_attr(modifier)
         end
         save!
@@ -125,7 +126,15 @@ module Mongoid::History
         save!
       end
 
-      private
+      def get_embedded(name)
+        self.send(self.class.embedded_alias(name))
+      end
+
+      def create_embedded(name, value)
+        self.send("create_#{self.class.embedded_alias(name)}!", value)
+      end
+
+    private
       def get_versions_criteria(options_or_version)
         if options_or_version.is_a? Hash
           options = options_or_version
@@ -164,28 +173,28 @@ module Mongoid::History
         # we're assured, through the object creation, it'll exist. Whereas we're not guarenteed
         # the child to parent (embedded_in, belongs_to) relation will be defined
         if node._parent
-          meta = _parent.relations.values.select do |relation|
-            relation.class_name == node.class.to_s
+          meta = node._parent.relations.values.select do |relation|
+            relation.class_name == node.metadata.class_name.to_s
           end.first
         end
 
         # if root node has no meta, and should use class name instead
         name = meta ? meta.key.to_s : node.class.name
 
-        { 'name' => name, 'id' => node.id}
+        ActiveSupport::OrderedHash['name', name, 'id', node.id]
       end
 
       def modified_attributes_for_update
         @modified_attributes_for_update ||= if history_trackable_options[:on] == :all
-                                              changes.reject do |k, v|
-                                                history_trackable_options[:except].include?(k)
-                                              end
-                                            else
-                                              changes.reject do |k, v|
-                                                !history_trackable_options[:on].include?(k)
-                                              end
+          changes.reject do |k, v|
+            history_trackable_options[:except].include?(database_field_name(k))
+          end
+        else
+          changes.reject do |k, v|
+            !history_trackable_options[:on].include?(database_field_name(k))
+          end
 
-                                            end
+        end
       end
 
       def modified_attributes_for_create
@@ -194,7 +203,7 @@ module Mongoid::History
           h[k] = [nil, v]
           h
         end.reject do |k, v|
-          history_trackable_options[:except].include?(k)
+          history_trackable_options[:except].include?(database_field_name(k))
         end
       end
 
@@ -265,16 +274,37 @@ module Mongoid::History
           modified[k] = m unless m.nil?
         end
 
-        return original.easy_diff modified
+        [ original, modified ]
       end
 
     end
 
     module SingletonMethods
       def history_trackable_options
-        @history_trackable_options ||= Mongoid::History.trackable_class_options[self.name.tableize.singularize.to_sym]
+        @history_trackable_options ||= Mongoid::History.trackable_class_options[self.collection_name.to_s.singularize.to_sym]
+      end
+
+      def embeds_one?(name)
+        relation_of(name) == Mongoid::Relations::Embedded::One
+      end
+
+      def embeds_many?(name)
+        relation_of(name) == Mongoid::Relations::Embedded::Many
+      end
+
+      def embedded_alias(name)
+        @embedded_aliases ||= relations.inject(HashWithIndifferentAccess.new) do |h,(k,v)|
+          h[v[:store_as]||k]=k; h
+        end
+        @embedded_aliases[name]
+      end
+
+      protected
+
+      def relation_of(name)
+        meta = reflect_on_association(embedded_alias(name))
+        meta ? meta.relation : nil
       end
     end
-
   end
 end

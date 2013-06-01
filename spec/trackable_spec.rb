@@ -8,10 +8,6 @@ describe Mongoid::History::Trackable do
     end
   end
 
-  after :each do
-    Mongoid::History.trackable_class_options = nil
-  end
-
   it "should have #track_history" do
     MyModel.should respond_to :track_history
   end
@@ -35,15 +31,11 @@ describe Mongoid::History::Trackable do
         :modifier_field =>  :modifier,
         :version_field  =>  :version,
         :scope          =>  :my_model,
-        :except         =>  ["created_at", "updated_at", "version", "modifier_id", "_id", "id"],
+        :except         =>  ["created_at", "updated_at", "version", "modifier_id", "_id"],
         :track_create   =>  false,
         :track_update   =>  true,
         :track_destroy  =>  false,
       }
-    end
-
-    after :each do
-      Mongoid::History.trackable_class_options = nil
     end
 
     it "should have default options" do
@@ -64,6 +56,21 @@ describe Mongoid::History::Trackable do
 
     it "should define #history_trackable_options" do
       MyModel.history_trackable_options.should == @expected_option
+    end
+
+    context "sub-model" do
+      before :each do
+        class MySubModel < MyModel
+        end
+      end
+
+      it "should have default options" do
+        Mongoid::History.trackable_class_options[:my_model].should == @expected_option
+      end
+
+      it "should define #history_trackable_options" do
+        MySubModel.history_trackable_options.should == @expected_option
+      end
     end
 
     context "track_history" do
