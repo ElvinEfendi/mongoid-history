@@ -89,7 +89,7 @@ module Mongoid::History
 
       # fetch all history tracks as history_tracks_by_wrapper does
       # however this method also group fetched data by given field
-      def groupped_history_tracks(wrapper=nil, group_by_key='history_group_id')
+      def grouped_history_tracks(wrapper=nil, group_by_key='history_group_id')
         wrapper ||= {class_name: self.class.name, id: self.id.to_s}
 
         hash = { 
@@ -99,7 +99,7 @@ module Mongoid::History
           reduce: 'function(obj,prev) {prev.group.push(obj);}' 
         }
 
-        @groupped_history_tracks ||= Mongoid::History.tracker_class.collection.group(hash)
+        @grouped_history_tracks ||= Mongoid::History.tracker_class.collection.group(hash)
       end
 
       #  undo :from => 1, :to => 5
